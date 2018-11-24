@@ -5,19 +5,17 @@ use failure::Error;
 
 use core::make_alphanumeric;
 use symbol;
-use types::MutPointer;
 
 use std::ffi::CString;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::os::unix::prelude::*;
-use std::ptr;
 
 #[derive(Debug)]
 pub struct Uprobe {
     code_fd: File,
     name: CString,
-    p: MutPointer,
+    event_fd: RawFd
 }
 
 impl Uprobe {
@@ -33,9 +31,7 @@ impl Uprobe {
             CString::new(name).map_err(|_| format_err!("Nul byte in Uprobe name: {}", name))?;
         let cpath =
             CString::new(path).map_err(|_| format_err!("Nul byte in Uprobe path: {}", name))?;
-        // TODO: maybe pass in the CPU & PID instead of
-        let (cpu, group_fd) = (0, -1);
-        let uprobe_ptr = unsafe {
+        let efd = unsafe {
             bpf_attach_uprobe(
                 file.as_raw_fd(),
                 attach_type,
@@ -43,19 +39,15 @@ impl Uprobe {
                 cpath.as_ptr(),
                 addr,
                 pid,
-                cpu,
-                group_fd,
-                None,
-                ptr::null_mut(),
             )
         };
-        if uprobe_ptr.is_null() {
+        if efd < 0 {
             return Err(format_err!("Failed to attach Uprobe: {}", name));
         } else {
             Ok(Self {
                 code_fd: file,
                 name: cname,
-                p: uprobe_ptr,
+                event_fd: efd,
             })
         }
     }

@@ -1,20 +1,17 @@
 use bcc_sys::bccapi::*;
 use failure::Error;
 
-use types::MutPointer;
-
 use std::ffi::CString;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::os::unix::prelude::*;
-use std::ptr;
 
 #[derive(Debug)]
 pub struct Tracepoint {
     subsys: CString,
     name: CString,
     code_fd: File,
-    p: MutPointer,
+    event_fd: RawFd
 }
 
 impl Tracepoint {
@@ -23,21 +20,14 @@ impl Tracepoint {
             CString::new(name).map_err(|_| format_err!("Nul byte in Tracepoint name: {}", name))?;
         let csubsys = CString::new(subsys)
             .map_err(|_| format_err!("Nul byte in Tracepoint subsys: {}", subsys))?;
-        // NOTE: BPF events are system-wide and do not support CPU filter
-        let (pid, cpu, group_fd) = (-1, 0, -1);
-        let ptr = unsafe {
+        let efd = unsafe {
             bpf_attach_tracepoint(
                 file.as_raw_fd(),
                 csubsys.as_ptr(),
-                cname.as_ptr(),
-                pid,
-                cpu,
-                group_fd,
-                None,
-                ptr::null_mut(),
+                cname.as_ptr()
             )
         };
-        if ptr.is_null() {
+        if efd < 0 {
             return Err(format_err!(
                 "Failed to attach tracepoint: {}:{}",
                 subsys,
@@ -48,7 +38,7 @@ impl Tracepoint {
                 subsys: csubsys,
                 name: cname,
                 code_fd: file,
-                p: ptr,
+                event_fd: efd,
             })
         }
     }
